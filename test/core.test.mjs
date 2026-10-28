@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {filterDay,marker,basicSummary,validDate} from '../public/core.js';
+import {sharedUrl,extract} from '../netlify/functions/import.mjs';
+import {handler} from '../netlify/functions/summarize.mjs';
+test('days separated and undated preamble excluded',()=>{const r=filterDay('sem data\nINÍCIO DO DIA 27/10/2026\nantigo\nINÍCIO DO DIA 28/10/2026\nnovo\nINÍCIO DO DIA 29/10/2026\nfuturo','2026-10-28');assert.match(r.text,/novo/);assert.doesNotMatch(r.text,/antigo|futuro|sem data/);assert.equal(r.unknown,1);});
+test('multiple sections on same date',()=>{assert.match(filterDay('28/10/2026 09:00\na\n29/10/2026\nb\n28/10/2026 18:00\nc','2026-10-28').text,/a\n28\/10\/2026 18:00\nc/);});
+test('dates within prose do not create a day',()=>{assert.equal(marker('A prova será em 28/10/2026'),null);assert.equal(marker('28/10/2026 será a prova'),null);assert.equal(filterDay('texto sem datas','2026-10-28').found,false);});
+test('strict calendar validity and headings',()=>{assert.equal(validDate('2026-02-30'),false);assert.equal(marker('**INÍCIO DO DIA 28/10/2026**'),'2026-10-28');assert.equal(marker('31/02/2026'),null);});
+test('basic summary only uses supplied sentences',()=>{const source='Eu estudei álgebra.\nResolvi os exercícios.\nRevisei álgebra novamente.';for(const s of basicSummary(source))assert.ok(source.includes(s));});
+test('import only accepts official share host, without credentials or redirects',()=>{for(const u of ['http://chatgpt.com/share/12345678901234567890','https://evil.com/share/12345678901234567890','https://chatgpt.com@evil.com/share/12345678901234567890','https://chatgpt.com/c/12345678901234567890','https://u:p@chatgpt.com/share/12345678901234567890'])assert.throws(()=>sharedUrl(u));assert.equal(sharedUrl('https://chatgpt.com/share/6ae163dc-02d0-83e9-8d44-f9a13555637c?x=1'),'https://chatgpt.com/share/6ae163dc-02d0-83e9-8d44-f9a13555637c');});
+test('import extracts actual message nodes and fails on login shell',()=>{assert.match(extract('<div data-message-author-role="user"><p>Olá</p><p>Tudo bem?</p></div>'),/Olá\nTudo bem/);assert.throws(()=>extract('<html><body>Login</body></html>'));});
+test('AI cannot be used without server setup or with invalid method',async()=>{const r=await handler({httpMethod:'GET'});assert.equal(r.statusCode,405);const saved=process.env.GEMINI_API_KEY;delete process.env.GEMINI_API_KEY;try{assert.equal((await handler({httpMethod:'POST',body:'{}'})).statusCode,503);}finally{if(saved)process.env.GEMINI_API_KEY=saved;}});
